@@ -135,7 +135,7 @@ pub const Matrix4x4 = packed struct {
           .add(ac3.multiply(Vector4.set(b.w)));
     }
 
-    /// Create a matrix containing only a translation
+    /// Create a matrix containing a translation
     pub fn createTranslation(translation: Vector3) Matrix4x4 {
         return .{
             .m00 = 1, .m10 = 0, .m20 = 0, .m30 = translation.x,
@@ -182,6 +182,137 @@ pub const Matrix4x4 = packed struct {
             .m02 = 0, .m12 = 0, .m22 = 1, .m32 = 0,
             .m03 = 0, .m13 = 0, .m23 = 0, .m33 = 1,
         };
+    }
+
+    /// Create a matrix containing a scale
+    pub fn createScale(scale: Vector3) Matrix4x4 {
+        return .{
+            .m00 = scale.x, .m10 = 0, .m20 = 0, .m30 = 0,
+            .m01 = 0, .m11 = scale.y, .m21 = 0, .m31 = 0,
+            .m02 = 0, .m12 = 0, .m22 = scale.z, .m32 = 0,
+            .m03 = 0, .m13 = 0, .m23 = 0, .m33 = 1,
+        };
+    }
+
+    /// Create a projection matrix with the field of view given along the vertical axis
+    pub fn createPerspectiveProjectionVertical(vertical_fov: f32, aspect: f32, near: f32, far: f32, invert_depth: bool) Matrix4x4 {
+        assert(vertical_fov > 0);
+        assert(aspect > 0);
+
+        const h = std.math.tan(vertical_fov * 0.5);
+        const w = h * aspect;
+
+        var z: f32 = -1;
+        if (invert_depth) {
+            var tmp = near;
+            near = far;
+            far = tmp;
+            z = 1;
+        }
+
+        return .{
+            .m00 = 1.0/w, .m10 = 0,     .m20 = 0,                  .m30 = 0,
+            .m01 = 0,     .m11 = 1.0/h, .m21 = 0,                  .m31 = 0,
+            .m02 = 0,     .m12 = 0,     .m22 = far / (near - far), .m32 = (far * near) / (near - far),
+            .m03 = 0,     .m13 = 0,     .m23 = z,                  .m33 = 0,
+        };
+    }
+
+    /// Create a projection matrix with the field of view given along the horizontal axis
+    pub fn createPerspectiveProjectionHorizontal(horizontal_fov: f32, aspect: f32, near: f32, far: f32, invert_depth: bool) Matrix4x4 {
+        assert(horizontal_fov > 0);
+        assert(aspect > 0);
+
+        const w = std.math.tan(horizontal_fov * 0.5);
+        const h = w / aspect;
+
+        var z: f32 = -1;
+        if (invert_depth) {
+            var tmp = near;
+            near = far;
+            far = tmp;
+            z = 1;
+        }
+
+        return .{
+            .m00 = 1.0/w, .m10 = 0,     .m20 = 0,                  .m30 = 0,
+            .m01 = 0,     .m11 = 1.0/h, .m21 = 0,                  .m31 = 0,
+            .m02 = 0,     .m12 = 0,     .m22 = far / (near - far), .m32 = (far * near) / (near - far),
+            .m03 = 0,     .m13 = 0,     .m23 = z,                  .m33 = 0,
+        };
+    }
+
+    /// Create a projection matrix with the field of view given along the shortest axis
+    pub fn createPerspectiveProjectionShortest(fov: f32, aspect: f32, near: f32, far: f32, invert_depth: bool) Matrix4x4 {
+        assert(fov > 0);
+        assert(aspect > 0);
+
+        var w: f32 = undefined;
+        var h: f32 = undefined;
+
+        if (aspect < 1) {
+            w = std.math.tan(fov * 0.5);
+            h = w / aspect;
+        } else {
+            h = std.math.tan(fov * 0.5);
+            w = h * aspect;
+        }
+
+        var z: f32 = -1;
+        if (invert_depth) {
+            var tmp = near;
+            near = far;
+            far = tmp;
+            z = 1;
+        }
+
+        return .{
+            .m00 = 1.0/w, .m10 = 0,     .m20 = 0,                  .m30 = 0,
+            .m01 = 0,     .m11 = 1.0/h, .m21 = 0,                  .m31 = 0,
+            .m02 = 0,     .m12 = 0,     .m22 = far / (near - far), .m32 = (far * near) / (near - far),
+            .m03 = 0,     .m13 = 0,     .m23 = z,                  .m33 = 0,
+        };
+    }
+
+    pub fn createTransform(translation: Vector3, rotation: Quaternion, scale: Vector3) Matrix4x4 {
+        const xx = 2 * rotation.x * rotation.x;
+        const xy = 2 * rotation.x * rotation.y;
+        const xz = 2 * rotation.x * rotation.z;
+        const xw = 2 * rotation.x * rotation.w;
+        const yy = 2 * rotation.y * rotation.y;
+        const yz = 2 * rotation.y * rotation.z;
+        const yw = 2 * rotation.y * rotation.w;
+        const zz = 2 * rotation.z * rotation.z;
+        const zw = 2 * rotation.z * rotation.w;
+
+        var x_basis = Vector4.init(
+            1 - yy - zz,
+                xy + zw,
+                xz - yw,
+            0
+        );
+
+        var y_basis = Vector4.init(
+                xy - zw,
+            1 - xx - zz,
+                yz + xw,
+            0
+        );
+
+        var z_basis = Vector4.init(
+                xz + yw,
+                yz - xw,
+            1 - xx - yy,
+            0
+        );
+
+        x_basis = x_basis.multiplyScalar(scale.x);
+        y_basis = x_basis.multiplyScalar(scale.y);
+        z_basis = x_basis.multiplyScalar(scale.z);
+
+        var offset = Vector4.init(translation.x, translation.y, translation.z, 1);
+
+        return initColumns(x_basis, y_basis, z_basis, offset);
     }
 };
 
@@ -332,4 +463,13 @@ test "Matrix4x4" {
 
     v = Matrix4x4.createRotationZ(degToRad(@as(f32, -90))).multiplyVector(Vector4.init(1, 2, 3, 1));
     try expectAppproxEq(Vector4.init(2, -1, 3, 1), v);
+
+    m = Matrix4x4.createScale(Vector3.init(-1, 2, 3));
+    try expectEqual(
+        Matrix4x4.init(
+            -1, 0, 0, 0,
+            0, 2, 0, 0,
+            0, 0, 3, 0,
+            0, 0, 0, 1,
+        ), m);
 }
